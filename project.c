@@ -30,6 +30,13 @@ GLfloat projectionMatrix[] = {
 	vec3 campos = {0, 0.5, 20};
 	vec3 forward = {0,0,-4};
 	vec3 up = {0,1,0};
+	int way = 1;
+	vec3 pos1 = {0,-8,0};
+	vec3 pos2 = {50,-8,0};
+	vec3 forwardboat = {0,0,1};
+	vec3 forwardboat2 = {0,0,1};
+	vec3 vel1, vel2;
+
 
 
 Point3D lightSourcesColorsArr[] = { {1.0f, 0.0f, 0.0f}, // Red light
@@ -53,8 +60,7 @@ Point3D lightSourcesDirectionsPositions[] = { {10.0f, 5.0f, 0.0f}, // Red light,
 
 GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
 
-	mat4 rot, trans, trans1, modelToWorldMatrix, camMatrix;
-	vec3 pos[3];
+	mat4 rot, trans, trans1, modelToWorldMatrix, camMatrix, rot1, rot2;
 
 	Model *walls, *ground, *sky, *bunny, *sea;
 
@@ -160,21 +166,17 @@ GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
 
 	int prevx = 0, prevy = 0;
 
-
-	void collision(vec3 *pos1, vec3 *pos2, GLfloat radius){
+	void collision(vec3 *pos1, vec3 *pos2, GLfloat radius, vec3 vel1, vec3  vel2){
 		float dx = pos1->x - pos2->x;
 		float dy = pos1->y - pos2->y;
 		float dz = pos1->z - pos2->z;
 
 		float dist = sqrt(dx*dx+dy*dy+dz*dz);
 
-		if (dist <= (radius*2)){
-			printf("Hello");
+		if (dist <= (radius) && fabsf(vel1.x-vel2.x)>fabsf(vel1.y-vel2.y))
+		{
+			way += 1;
 		}
-		else{
-	
-		}
-
 	}
 
 	void display(void)
@@ -263,11 +265,81 @@ GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
 		glBindTexture(GL_TEXTURE_2D, bunnyTex);
 		glUniform1i(glGetUniformLocation(program, "texUnit"), 0);
 
+		//pos[0] = SetVector(50*cos(t/600),-8, 50*sin(t/600));
+		if (way % 2 == 0)
+		{
+			float x = pos1.x;
+			float z = pos1.z;
+			forwardboat = MultMat3Vec3(mat4tomat3(Ry(0.02)), forwardboat);
+			pos1 = VectorAdd(pos1, ScalarMult(forwardboat, 0.5));
+			float dx1 = pos1.x - x;
+			float dz1 = pos1.z - z;
+			if (dz1 != 0)
+			{
+				rot1 = Ry(atan(dx1/dz1));
+				if (dz1 < 0)
+				{
+					rot1 = Mult(rot1, Ry(acos(-1.0)));
+				}
+			}
+			vel1 = SetVector(x, pos1.x, 1);
+			x = pos2.x;
+			z = pos2.z;
+			forwardboat2 = MultMat3Vec3(mat4tomat3(Ry(0.08)), forwardboat2);
+			pos2 = VectorAdd(pos2, ScalarMult(forwardboat2, 0.9));
+			float dx2 = pos2.x - x;
+			float dz2 = pos2.z - z;
+			if (dz2 != 0)
+			{
+				rot2 = Ry(atan(dx2/dz2));
+				if (dz2 < 0)
+				{
+					rot2 = Mult(rot2, Ry(acos(-1.0)));
+				}
+			}
 
-		pos[0] = SetVector(50*cos(t/600),-8, 50*sin(t/600));
-		trans1 = T(pos[0].x, pos[0].y, pos[0].z);
-		rot = Ry(-t/600);
-		modelToWorldMatrix = Mult(trans1, rot);
+
+		vel2 = SetVector(x, pos2.x, 1);
+		}
+
+		else
+		{
+			float x = pos1.x;
+			float z = pos1.z;
+			forwardboat = MultMat3Vec3(mat4tomat3(Ry(-0.02)), forwardboat);
+			pos1 = VectorSub(pos1, ScalarMult(forwardboat, 0.5));
+			float dx1 = pos1.x - x;
+			float dz1 = pos1.z - z;
+			if (dz1 != 0)
+			{
+				rot1 = Ry(atan(dx1/dz1));
+				if (dz1 < 0)
+				{
+					rot1 = Mult(rot1, Ry(acos(-1.0)));
+				}
+			}
+			vel1 = SetVector(x, pos1.x, 1);
+			x = pos2.x;
+			z = pos2.z;
+			forwardboat2 = MultMat3Vec3(mat4tomat3(Ry(-0.08)), forwardboat2);
+			pos2 = VectorSub(pos2, ScalarMult(forwardboat2, 0.9));
+			float dx2 = pos2.x - x;
+			float dz2 = pos2.z - z;
+			if (dz2 != 0)
+			{
+				rot2 = Ry(atan(dx2/dz2));
+				if (dz2 < 0)
+				{
+					rot2 = Mult(rot2, Ry(acos(-1.0)));
+				}
+			}
+
+			vel2 = SetVector(x, pos2.x, 1);
+
+		}
+
+		trans1 = T(pos1.x, pos1.y, pos1.z);
+		modelToWorldMatrix = Mult(trans1, rot1);
 		glBindTexture(GL_TEXTURE_2D, myTexx);
 		glUniform1i(glGetUniformLocation(program, "texUnit"), 0); // Texture unit 0
 		glUniformMatrix4fv(glGetUniformLocation(program, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
@@ -276,10 +348,9 @@ GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
 		modelToWorldMatrix = IdentityMatrix();
 		currentModelIndex = 0;
 		glUniformMatrix4fv(glGetUniformLocation(program, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
-		pos[1] = SetVector(50*cos(t/600),-8, -50*sin(t/600));
-		trans = T(pos[1].x, pos[1].y, pos[1].z);
-		rot = Mult(Ry(t/600), Ry(3.1415));
-		modelToWorldMatrix = Mult(trans, rot);
+		trans = T(pos2.x, pos2.y, pos2.z);
+		//rot = Mult(Ry(t/600), Ry(3.1415*way));
+		modelToWorldMatrix = Mult(trans, rot2);
 		glUniformMatrix4fv(glGetUniformLocation(program, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
 		DrawModel(bunny, program, "in_Position", "in_Normal", NULL);
 		//Specular
@@ -292,7 +363,7 @@ GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
 
 		glutSwapBuffers();
 
-		collision(&pos[0], &pos[1], 17);
+		collision(&pos1, &pos2, 17, vel1, vel2);
 	}
 
 
