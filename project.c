@@ -10,6 +10,94 @@
 #include "LoadTGA.h"
 #include "VectorUtils3.h"
 
+Model* GenerateTerrain(TextureData *tex)
+{
+	int vertexCount = tex->width * tex->height;
+	int triangleCount = (tex->width-1) * (tex->height-1) * 2;
+	int x, z;
+
+	GLfloat *vertexArray = malloc(sizeof(GLfloat) * 3 * vertexCount);
+	GLfloat *normalArray = malloc(sizeof(GLfloat) * 3 * vertexCount);
+	GLfloat *texCoordArray = malloc(sizeof(GLfloat) * 2 * vertexCount);
+	GLuint *indexArray = malloc(sizeof(GLuint) * triangleCount*3);
+
+	for (x = 0; x < tex->width; x++)
+	{
+		for (z = 0; z < tex->height; z++)
+		{
+
+			// Vertex array. You need to scale this properly
+			vertexArray[(x + z * tex->width)*3 + 0] = x / 0.1;
+			vertexArray[(x + z * tex->width)*3 + 1] = (cos(x)+sin(z*10));
+			vertexArray[(x + z * tex->width)*3 + 2] = z / 0.1;
+		}
+
+	}
+
+	for (x = 0; x < tex->width; x++)
+	{
+		for (z = 0; z < tex->height; z++)
+		{
+			// Normal vectors. You need to calculate these.
+			vec3 n = {0,1,0};
+			if ( (x-1) > 0 && (z-1) > 0 && (z+1) < tex->height && (x+1) < tex->width)
+			{
+				vec3 vertex1 = {vertexArray[(x + 1 + (z + 1) * tex->width)*3 + 0], vertexArray[(x + 1 + (z + 1) * tex->width)*3 + 1], vertexArray[(x + 1 + (z + 1) * tex->width)*3 + 2]};
+				vec3 vertex2;
+				vertex2 = (vec3){vertexArray[((x-1) + z * tex->width)*3 + 0], vertexArray[((x-1) + z * tex->width)*3 + 1], vertexArray[((x-1) + z * tex->width)*3 + 2]};
+				vec3 vertex3;
+				vertex3 = (vec3){vertexArray[(x + (z-1) * tex->width)*3 + 0], vertexArray[(x + (z-1) * tex->width)*3 + 1], vertexArray[(x + (z-1) * tex->width)*3 + 2]};
+				vec3 vector1 = VectorSub(vertex2, vertex1);
+				vec3 vector2 = VectorSub(vertex3, vertex1);
+				n = CrossProduct(vector1, vector2);
+				n = Normalize(n);
+
+				if (n.y < 0)
+				{
+					n = ScalarMult(n, -1);
+				}
+
+			}
+
+			normalArray[(x + z * tex->width)*3 + 0] = n.x;
+			normalArray[(x + z * tex->width)*3 + 1] = n.y;
+			normalArray[(x + z * tex->width)*3 + 2] = n.z;
+
+			// Texture coordinates. You may want to scale them.
+			texCoordArray[(x + z * tex->width)*2 + 0] = x/100; // (float)x / tex->width;
+			texCoordArray[(x + z * tex->width)*2 + 1] = z/100; // (float)z / tex->height;
+		}
+	}
+	for (x = 0; x < tex->width-1; x++)
+	for (z = 0; z < tex->height-1; z++)
+	{
+		// Triangle 1
+		indexArray[(x + z * (tex->width-1))*6 + 0] = x + z * tex->width;
+		indexArray[(x + z * (tex->width-1))*6 + 1] = x + (z+1) * tex->width;
+		indexArray[(x + z * (tex->width-1))*6 + 2] = x+1 + z * tex->width;
+		// Triangle 2
+		indexArray[(x + z * (tex->width-1))*6 + 3] = x+1 + z * tex->width;
+		indexArray[(x + z * (tex->width-1))*6 + 4] = x + (z+1) * tex->width;
+		indexArray[(x + z * (tex->width-1))*6 + 5] = x+1 + (z+1) * tex->width;
+	}
+
+
+	// End of terrain generation
+
+	// Create Model and upload to GPU:
+
+	Model* model = LoadDataToModel(
+		vertexArray,
+		normalArray,
+		texCoordArray,
+		NULL,
+		indexArray,
+		vertexCount,
+		triangleCount*3);
+
+		return model;
+	}
+
 // Globals
 // Data would normally be read from files
 
@@ -26,49 +114,25 @@ GLfloat projectionMatrix[] = {
 	0.0f, 0.0f, -(far + near)/(far - near), -2*far*near/(far - near),
 	0.0f, 0.0f, -1.0f, 0.0f};
 
+
 	GLfloat a = 0.0;
 	vec3 campos = {0, 0.5, 20};
 	vec3 forward = {0,0,-4};
 	vec3 up = {0,1,0};
 	int way = 1;
-	vec3 pos1 = {0,-8,0};
-	vec3 pos2 = {50,-8,0};
+	vec3 pos1 = {0,-11.5,0};
+	vec3 pos2 = {50,-11.5,0};
 	vec3 forwardboat = {0,0,1};
 	vec3 forwardboat2 = {0,0,1};
 	vec3 vel1, vel2;
 
+	mat4 rot, trans, trans1, modelToWorldMatrix, camMatrix, rot1, rot2, modelToWorldMatrixsun, rotsun, transsun;
 
-
-Point3D lightSourcesColorsArr[] = { {1.0f, 0.0f, 0.0f}, // Red light
-
-                                 {0.0f, 1.0f, 0.0f}, // Green light
-
-                                 {0.0f, 0.0f, 1.0f}, // Blue light
-
-                                 {1.0f, 1.0f, 1.0f} }; // White light
-
-GLint isDirectional[] = {0,0,1,1};
-
-
-Point3D lightSourcesDirectionsPositions[] = { {10.0f, 5.0f, 0.0f}, // Red light, positional
-
-                                       {0.0f, 5.0f, 10.0f}, // Green light, positional
-
-                                       {-1.0f, 0.0f, 0.0f}, // Blue light along X
-
-                                       {0.0f, 0.0f, -1.0f} }; // White light along Z
-
-GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
-
-	mat4 rot, trans, trans1, modelToWorldMatrix, camMatrix, rot1, rot2;
-
-	Model *walls, *ground, *sky, *bunny, *sea;
-
-	int currentModelIndex = 0;
-	GLfloat xpos;
+	Model *walls, *ground, *sky, *bunny, *sea, *sun;
 
 	// Reference to shader program
-	GLuint program,programsky, programsea, myTex, myTexmask, myTexx, bunnyTex;
+	GLuint program,programsky, programsea, programsun, myTex, myTexmask, bottomTex;
+	TextureData blacktex;
 
 	// vertex array object
 	unsigned int windmillVertexArrayObjID;
@@ -88,15 +152,17 @@ GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
 		bunny = LoadModelPlus("OldBoat.obj");
 		ScaleModel(bunny, 0.5,0.5,0.5);
 		ReloadModelData(bunny);
-		sea = LoadModelPlus("sea.obj");
+		//sea = LoadModelPlus("sea.obj");
+		LoadTGATextureData("black.tga", &blacktex);
+		sun = LoadModelPlus("groundsphere.obj");
+		ScaleModel(sun, 30,30,30);
+		ReloadModelData(sun);
 		ground = LoadModelPlus("ground.obj");
 		sky = LoadModelPlus("skybox.obj");
 		LoadTGATextureSimple("SkyBox512.tga", &myTexmask);
 		LoadTGATextureSimple("conc.tga", &myTex);
-		LoadTGATextureSimple("grass.tga", &myTexx);
-		LoadTGATextureSimple("maskros512.tga", &bunnyTex);
-
-		dumpInfo();
+		LoadTGATextureSimple("BlueTexturedPlastic.tga", &bottomTex);
+		sea = GenerateTerrain(&blacktex);
 
 		// GL inits
 		glClearColor(1.0,0,0,0);
@@ -105,6 +171,7 @@ GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
 
 		// Load and compile shader
 		program = loadShaders("project.vert", "project.frag");
+		programsun = loadShaders("sunshader.vert", "sunshader.frag");
 		programsky = loadShaders("skybox.vert", "skybox.frag");
 		programsea = loadShaders("seashader.vert", "seashader.frag");
 		printError("init shader");
@@ -120,36 +187,6 @@ GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
 		glGenBuffers(1, &windmillNormalBufferObjID);
 		glGenBuffers(1, &windmillTexCoordBufferObjID);
 
-		printError("pre bunny");
-		// VBO for vertex data
-		glBindBuffer(GL_ARRAY_BUFFER, windmillVertexBufferObjID);
-		glBufferData(GL_ARRAY_BUFFER, walls->numVertices*3*sizeof(GLfloat), walls->vertexArray, GL_STATIC_DRAW);
-		glVertexAttribPointer(glGetAttribLocation(program, "in_Position"), 3, GL_FLOAT, GL_FALSE, 0, 0);
-		glEnableVertexAttribArray(glGetAttribLocation(program, "in_Position"));
-
-		// VBO for normal data
-		glBindBuffer(GL_ARRAY_BUFFER, windmillNormalBufferObjID);
-		glBufferData(GL_ARRAY_BUFFER, walls->numVertices*3*sizeof(GLfloat), walls->normalArray, GL_STATIC_DRAW);
-		glVertexAttribPointer(glGetAttribLocation(program, "in_Normal"), 3, GL_FLOAT, GL_FALSE, 0, 0);
-		glEnableVertexAttribArray(glGetAttribLocation(program, "in_Normal"));
-
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, windmillIndexBufferObjID);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, walls->numIndices*sizeof(GLuint), walls->indexArray, GL_STATIC_DRAW);
-
-		if (walls->texCoordArray != NULL)
-
-		{
-
-			glBindBuffer(GL_ARRAY_BUFFER, windmillTexCoordBufferObjID);
-
-			glBufferData(GL_ARRAY_BUFFER, walls->numVertices*2*sizeof(GLfloat), walls->texCoordArray, GL_STATIC_DRAW);
-
-			glVertexAttribPointer(glGetAttribLocation(program, "inTexCoord"), 2, GL_FLOAT, GL_FALSE, 0, 0);
-
-			glEnableVertexAttribArray(glGetAttribLocation(program, "inTexCoord"));
-
-		}
-
 		// End of upload of geometry
 
 		printError("init arrays");
@@ -162,9 +199,7 @@ GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
 		glutTimerFunc(20, &OnTimer, value);
 	}
 
-	float angle = 0, height = 0, side = 0, straight = 0;
-
-	int prevx = 0, prevy = 0;
+	float side = 0, straight = 0;
 
 	void collision(vec3 *pos1, vec3 *pos2, GLfloat radius, vec3 vel1, vec3  vel2){
 		float dx = pos1->x - pos2->x;
@@ -190,7 +225,6 @@ GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
 
 		glDisable(GL_DEPTH_TEST);
 
-
 		if(glutKeyIsDown('a'))
 			forward = MultMat3Vec3(mat4tomat3(Ry(0.02)), forward);
 		if(glutKeyIsDown('d'))
@@ -210,6 +244,9 @@ GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
 			campos = VectorAdd(campos, ScalarMult(side, 0.1));
 		}
 
+		transsun = T(0,-1000,0);
+		rotsun = Rx(t/2500);
+		modelToWorldMatrixsun = Mult(rotsun, transsun);
 
 		glUseProgram(programsky);
 		glUniformMatrix4fv(glGetUniformLocation(programsky, "projmatrix"), 1, GL_TRUE, projectionMatrix);
@@ -219,53 +256,51 @@ GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
 		glUniformMatrix4fv(glGetUniformLocation(programsky, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
 		camMatrix = lookAtv(campos, VectorAdd(campos, forward), up);
 		a += 0.1;
-		//camMatrix = lookAt(25*sin(angle), -height, 25*cos(angle), 0, height,0, 0,1,0);
-	 	camMatrix = Mult(camMatrix, T(side,0,straight));
+		camMatrix = Mult(camMatrix, T(side,0,straight));
 		camMatrix.m[3] = 0;
 		camMatrix.m[7] = 0;
 		camMatrix.m[11] = 0;
 		glUniformMatrix4fv(glGetUniformLocation(programsky, "camMatrix"), 1, GL_TRUE, camMatrix.m);
 		glBindTexture(GL_TEXTURE_2D, myTexmask);
-		glUniform1i(glGetUniformLocation(programsky, "texUnit"), 0); // Texture unit 0
-		DrawModel(sky, programsky, "in_Position", "in_Normal", "inTexCoord");
+		glUniform1i(glGetUniformLocation(programsky, "texUnit"), 0);
+		DrawModel(sky, programsky, "in_Position", NULL, "inTexCoord");
 
 		glEnable(GL_DEPTH_TEST);
 
-		/*glUseProgram(programsea);
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		glUniformMatrix4fv(glGetUniformLocation(programsea, "projmatrix"), 1, GL_TRUE, projectionMatrix);
-		trans = T(-2,-11,0);
-		rot = Ry(0/300);
-		modelToWorldMatrix = Mult(trans, rot);
-		glUniformMatrix4fv(glGetUniformLocation(programsea, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
-		camMatrix = lookAtv(campos, VectorAdd(campos, forward), up);
-	 	camMatrix = Mult(camMatrix, T(side,0,straight));
-		glUniformMatrix4fv(glGetUniformLocation(programsky, "camMatrix"), 1, GL_TRUE, camMatrix.m);
+		glUseProgram(programsun);
+		glUniformMatrix4fv(glGetUniformLocation(programsun, "projmatrix"), 1, GL_TRUE, projectionMatrix);
+		glUniformMatrix4fv(glGetUniformLocation(programsun, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrixsun.m);
+		glUniformMatrix4fv(glGetUniformLocation(programsun, "camMatrix"), 1, GL_TRUE, camMatrix.m);
 		glBindTexture(GL_TEXTURE_2D, myTex);
-		glUniform1i(glGetUniformLocation(programsea, "texUnit"), 0); // Texture unit 0
-		DrawModel(sea, programsea, "in_Position", "in_Normal", NULL);
-		glDisable(GL_BLEND);*/
-
+		glUniform1i(glGetUniformLocation(programsun, "texUnit"), 0);
+		DrawModel(sun, programsun, "in_Position", NULL, "inTexCoord");
 
 		glUseProgram(program);
 		glUniformMatrix4fv(glGetUniformLocation(program, "projmatrix"), 1, GL_TRUE, projectionMatrix);
-		trans = T(-2,-11,0);
+		trans = T(-2,-15,0);
 		rot = Ry(0/300);
 		modelToWorldMatrix = Mult(trans, rot);
 		glUniformMatrix4fv(glGetUniformLocation(program, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
 		camMatrix = lookAtv(campos, VectorAdd(campos, forward), up);
-	 	camMatrix = Mult(camMatrix, T(side,0,straight));
-		glUniformMatrix4fv(glGetUniformLocation(programsky, "camMatrix"), 1, GL_TRUE, camMatrix.m);
+		camMatrix = Mult(camMatrix, T(side,0,straight));
+		glUniformMatrix4fv(glGetUniformLocation(program, "camMatrix"), 1, GL_TRUE, camMatrix.m);
 		glBindTexture(GL_TEXTURE_2D, myTex);
-		glUniform1i(glGetUniformLocation(program, "texUnit"), 0); // Texture unit 0
+		glUniform1i(glGetUniformLocation(program, "texUnit"), 0);
 		DrawModel(ground, program, "in_Position", "in_Normal", "inTexCoord");
 
+		glUseProgram(programsea);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glUniformMatrix4fv(glGetUniformLocation(programsea, "projmatrix"), 1, GL_TRUE, projectionMatrix);
+		trans = T(-800,-11,-800);
+		modelToWorldMatrix = Mult(trans, rot);
+		glUniformMatrix4fv(glGetUniformLocation(programsea, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
+		glUniformMatrix4fv(glGetUniformLocation(programsea, "camMatrix"), 1, GL_TRUE, camMatrix.m);
+		glBindTexture(GL_TEXTURE_2D, bottomTex);
+		glUniform1i(glGetUniformLocation(programsea, "texUnit"), 0); // Texture unit 0
+		DrawModel(sea, programsea, "in_Position", "in_Normal", "inTexCoord");
+		glDisable(GL_BLEND);
 
-		glBindTexture(GL_TEXTURE_2D, bunnyTex);
-		glUniform1i(glGetUniformLocation(program, "texUnit"), 0);
-
-		//pos[0] = SetVector(50*cos(t/600),-8, 50*sin(t/600));
 		if (way % 2 == 0)
 		{
 			float x = pos1.x;
@@ -338,26 +373,31 @@ GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
 
 		}
 
-		trans1 = T(pos1.x, pos1.y, pos1.z);
+		glUseProgram(program);
+		glUniformMatrix4fv(glGetUniformLocation(program, "projmatrix"), 1, GL_TRUE, projectionMatrix);
+		glUniformMatrix4fv(glGetUniformLocation(program, "camMatrix"), 1, GL_TRUE, camMatrix.m);
+		trans1 = T(1,-12, 1);
+		//trans = T(pos1.x, pos1.y, pos1.z);
+		rot1 = Mult(rot2, Ry(0));
 		modelToWorldMatrix = Mult(trans1, rot1);
-		glBindTexture(GL_TEXTURE_2D, myTexx);
-		glUniform1i(glGetUniformLocation(program, "texUnit"), 0); // Texture unit 0
+		glBindTexture(GL_TEXTURE_2D, myTex);
+		glUniform1i(glGetUniformLocation(program, "texUnit"), 0);
 		glUniformMatrix4fv(glGetUniformLocation(program, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
-		DrawModel(walls, program, "in_Position", "in_Normal", NULL);
+		DrawModel(walls, program, "in_Position", "in_Normal", "inTexCoord");
 
-		modelToWorldMatrix = IdentityMatrix();
-		currentModelIndex = 0;
-		glUniformMatrix4fv(glGetUniformLocation(program, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
 		trans = T(pos2.x, pos2.y, pos2.z);
-		//rot = Mult(Ry(t/600), Ry(3.1415*way));
 		modelToWorldMatrix = Mult(trans, rot2);
 		glUniformMatrix4fv(glGetUniformLocation(program, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
-		DrawModel(bunny, program, "in_Position", "in_Normal", NULL);
-		//Specular
-		glUniform3fv(glGetUniformLocation(program, "lightSourcesDirPosArr"), 4, &lightSourcesDirectionsPositions[0].x);
-		glUniform3fv(glGetUniformLocation(program, "lightSourcesColorArr"), 4, &lightSourcesColorsArr[0].x);
-		glUniform1f(glGetUniformLocation(program, "specularExponent"), specularExponent[0]);
-		glUniform1iv(glGetUniformLocation(program, "isDirectional"), 4, isDirectional);
+		DrawModel(bunny, program, "in_Position", "in_Normal", "inTexCoord");
+
+		glUniform1f(glGetUniformLocation(program, "sunposition"), modelToWorldMatrixsun.m[7]);
+		glUniform1f(glGetUniformLocation(program, "sunpositionx"), modelToWorldMatrixsun.m[11]);
+
+		glUseProgram(programsky);
+		glUniform1f(glGetUniformLocation(programsky, "sunposition"), modelToWorldMatrixsun.m[7]);
+		glUseProgram(programsea);
+		glUniform1f(glGetUniformLocation(programsea, "sunposition"), modelToWorldMatrixsun.m[7]);
+		glUniform1f(glGetUniformLocation(programsea, "sunpositionx"), modelToWorldMatrixsun.m[11]);
 
 		printError("display");
 
@@ -374,12 +414,8 @@ GLfloat specularExponent[] = {100.0, 200.0, 60.0, 50.0, 300.0, 150.0};
 		glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH); //Var ska den här ligga?
 		glutCreateWindow ("Lab3");
 		glutDisplayFunc(display);
-		//glutKeyboardFunc(keyboard);
 		init ();
 		glutTimerFunc(20, &OnTimer, 0);
-		printf("Change object with 't' or menu\n");
-		printf("Rotate camera with '.' and ','\n");
-		printf("Change camera height with '+', '-'\n");
 		printf("Move camera with a,s,d and w\n");
 		glutMainLoop();
 		return 0;
