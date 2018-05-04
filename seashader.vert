@@ -20,16 +20,16 @@ uniform float sunpositionx;
 
 void main(void)
 {
-pos = sunposition/1000; //Normalize sun height
-if (pos<0.2)
-{
-pos = 0.2;
-}
-sunposy = sunposition;
-sunposx = sunpositionx;
-mat3 normalMatrix1 = mat3(mdlMatrix);
-ex_Normal = normalMatrix1*in_Normal;
-exTexCoord = inTexCoord;
-ex_Surface = vec3(camMatrix*mdlMatrix * vec4(in_Position, 1.0));
-gl_Position = projmatrix*camMatrix*mdlMatrix*vec4(in_Position, 1.0);
+  pos = sunposition/1000; //Normalize sun height
+  if (pos<0.2)
+  {
+    pos = 0.2;
+  }
+  sunposy = sunposition;
+  sunposx = sunpositionx;
+  mat3 normalMatrix1 = mat3(mdlMatrix);
+  ex_Normal = normalMatrix1*in_Normal;
+  exTexCoord = inTexCoord;
+  ex_Surface = vec3(camMatrix*mdlMatrix * vec4(in_Position, 1.0));
+  gl_Position = projmatrix*camMatrix*mdlMatrix*vec4(in_Position, 1.0);
 }

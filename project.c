@@ -98,6 +98,57 @@ Model* GenerateTerrain(TextureData *tex)
 		return model;
 	}
 
+	void DrawModelInstanced(Model *m, GLuint program, char* vertexVariableName, char* normalVariableName, char* texCoordVariableName, int count)
+	{
+		if (m != NULL)
+		{
+			GLint loc;
+
+			glBindVertexArray(m->vao);	// Select VAO
+
+			glBindBuffer(GL_ARRAY_BUFFER, m->vb);
+			loc = glGetAttribLocation(program, vertexVariableName);
+			if (loc >= 0)
+			{
+				glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, 0, 0);
+				glEnableVertexAttribArray(loc);
+			}
+			else
+				fprintf(stderr, "DrawModel warning: '%s' not found in shader!\n", vertexVariableName);
+
+			if (normalVariableName!=NULL)
+			{
+				loc = glGetAttribLocation(program, normalVariableName);
+				if (loc >= 0)
+				{
+					printf("%s\n","test1" );
+					glBindBuffer(GL_ARRAY_BUFFER, m->nb);
+					glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, 0, 0);
+					glEnableVertexAttribArray(loc);
+				}
+				else
+					fprintf(stderr, "DrawModel warning: '%s' not found in shader!\n", normalVariableName);
+			}
+
+			// VBO for texture coordinate data NEW for 5b
+			if ((m->texCoordArray != NULL)&&(texCoordVariableName != NULL))
+			{
+				printf("%s\n","test2" );
+				loc = glGetAttribLocation(program, texCoordVariableName);
+				if (loc >= 0)
+				{
+					glBindBuffer(GL_ARRAY_BUFFER, m->tb);
+					glVertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, 0, 0);
+					glEnableVertexAttribArray(loc);
+				}
+				else
+					fprintf(stderr, "DrawModel warning: '%s' not found in shader!\n", texCoordVariableName);
+			}
+			printf("%s\n","draw" );
+			glDrawElementsInstanced(GL_TRIANGLES, m->numIndices, GL_UNSIGNED_INT, 0L, count);
+		}
+	}
+GLfloat a = 0.0;
 // Globals
 // Data would normally be read from files
 
@@ -115,7 +166,6 @@ GLfloat projectionMatrix[] = {
 	0.0f, 0.0f, -1.0f, 0.0f};
 
 
-	GLfloat a = 0.0;
 	vec3 campos = {0, 0.5, 20};
 	vec3 forward = {0,0,-4};
 	vec3 up = {0,1,0};
@@ -125,33 +175,34 @@ GLfloat projectionMatrix[] = {
 	vec3 forwardboat = {0,0,1};
 	vec3 forwardboat2 = {0,0,1};
 	vec3 vel1, vel2;
+	float side = 0, straight = 0;
 
 	mat4 rot, trans, trans1, modelToWorldMatrix, camMatrix, rot1, rot2, modelToWorldMatrixsun, rotsun, transsun;
 
-	Model *walls, *ground, *sky, *bunny, *sea, *sun;
+	Model *boat1, *ground, *sky, *boat2, *sea, *sun, *star;
 
 	// Reference to shader program
-	GLuint program,programsky, programsea, programsun, myTex, myTexmask, bottomTex;
+	GLuint program, programsky, programsea, programsun, sandtex, skytex, bottomTex, test;
 	TextureData blacktex;
 
 	// vertex array object
-	unsigned int windmillVertexArrayObjID;
+	unsigned int projectVertexArrayObjID;
 
 	void init(void)
 	{
 		// vertex buffer object, used for uploading the geometry
-		unsigned int windmillVertexBufferObjID;
-		unsigned int windmillIndexBufferObjID;
-		unsigned int windmillNormalBufferObjID;
-		unsigned int windmillTexCoordBufferObjID;
+		unsigned int projectVertexBufferObjID;
+		unsigned int projectIndexBufferObjID;
+		unsigned int projectNormalBufferObjID;
+		unsigned int projectTexCoordBufferObjID;
 
-		walls = LoadModelPlus("OldBoat.obj");
-		ScaleModel(walls, 0.5,0.5,0.5);
-		ReloadModelData(walls);
+		boat1 = LoadModelPlus("OldBoat.obj");
+		ScaleModel(boat1, 0.5,0.5,0.5);
+		ReloadModelData(boat1);
 
-		bunny = LoadModelPlus("OldBoat.obj");
-		ScaleModel(bunny, 0.5,0.5,0.5);
-		ReloadModelData(bunny);
+		boat2 = LoadModelPlus("OldBoat.obj");
+		ScaleModel(boat2, 0.5,0.5,0.5);
+		ReloadModelData(boat2);
 		//sea = LoadModelPlus("sea.obj");
 		LoadTGATextureData("black.tga", &blacktex);
 		sun = LoadModelPlus("groundsphere.obj");
@@ -159,10 +210,13 @@ GLfloat projectionMatrix[] = {
 		ReloadModelData(sun);
 		ground = LoadModelPlus("ground.obj");
 		sky = LoadModelPlus("skybox.obj");
-		LoadTGATextureSimple("SkyBox512.tga", &myTexmask);
-		LoadTGATextureSimple("conc.tga", &myTex);
+		LoadTGATextureSimple("SkyBox512.tga", &skytex);
+		LoadTGATextureSimple("conc.tga", &sandtex);
 		LoadTGATextureSimple("BlueTexturedPlastic.tga", &bottomTex);
 		sea = GenerateTerrain(&blacktex);
+		star = LoadModelPlus("star.obj");
+		ScaleModel(star, 1,1,1);
+		ReloadModelData(star);
 
 		// GL inits
 		glClearColor(1.0,0,0,0);
@@ -170,6 +224,7 @@ GLfloat projectionMatrix[] = {
 		printError("GL inits");
 
 		// Load and compile shader
+		test = loadShaders("phong.vert", "phong.frag");
 		program = loadShaders("project.vert", "project.frag");
 		programsun = loadShaders("sunshader.vert", "sunshader.frag");
 		programsky = loadShaders("skybox.vert", "skybox.frag");
@@ -179,13 +234,13 @@ GLfloat projectionMatrix[] = {
 		// Upload geometry to the GPU:
 
 		// Allocate and activate Vertex Array Object
-		glGenVertexArrays(1, &windmillVertexArrayObjID);
-		glBindVertexArray(windmillVertexArrayObjID);
+		glGenVertexArrays(1, &projectVertexArrayObjID);
+		glBindVertexArray(projectVertexArrayObjID);
 
-		glGenBuffers(1, &windmillVertexBufferObjID);
-		glGenBuffers(1, &windmillIndexBufferObjID);
-		glGenBuffers(1, &windmillNormalBufferObjID);
-		glGenBuffers(1, &windmillTexCoordBufferObjID);
+		glGenBuffers(1, &projectVertexBufferObjID);
+		glGenBuffers(1, &projectIndexBufferObjID);
+		glGenBuffers(1, &projectNormalBufferObjID);
+		glGenBuffers(1, &projectTexCoordBufferObjID);
 
 		// End of upload of geometry
 
@@ -199,8 +254,6 @@ GLfloat projectionMatrix[] = {
 		glutTimerFunc(20, &OnTimer, value);
 	}
 
-	float side = 0, straight = 0;
-
 	void collision(vec3 *pos1, vec3 *pos2, GLfloat radius, vec3 vel1, vec3  vel2){
 		float dx = pos1->x - pos2->x;
 		float dy = pos1->y - pos2->y;
@@ -213,10 +266,12 @@ GLfloat projectionMatrix[] = {
 			way += 1;
 		}
 	}
-
+int edge = 91;
 	void display(void)
 	{
 		printError("pre display");
+
+		int count = edge * edge;
 
 		// clear the screen
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -255,13 +310,12 @@ GLfloat projectionMatrix[] = {
 		modelToWorldMatrix = Mult(trans, rot);
 		glUniformMatrix4fv(glGetUniformLocation(programsky, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
 		camMatrix = lookAtv(campos, VectorAdd(campos, forward), up);
-		a += 0.1;
 		camMatrix = Mult(camMatrix, T(side,0,straight));
 		camMatrix.m[3] = 0;
 		camMatrix.m[7] = 0;
 		camMatrix.m[11] = 0;
 		glUniformMatrix4fv(glGetUniformLocation(programsky, "camMatrix"), 1, GL_TRUE, camMatrix.m);
-		glBindTexture(GL_TEXTURE_2D, myTexmask);
+		glBindTexture(GL_TEXTURE_2D, skytex);
 		glUniform1i(glGetUniformLocation(programsky, "texUnit"), 0);
 		DrawModel(sky, programsky, "in_Position", NULL, "inTexCoord");
 
@@ -271,7 +325,7 @@ GLfloat projectionMatrix[] = {
 		glUniformMatrix4fv(glGetUniformLocation(programsun, "projmatrix"), 1, GL_TRUE, projectionMatrix);
 		glUniformMatrix4fv(glGetUniformLocation(programsun, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrixsun.m);
 		glUniformMatrix4fv(glGetUniformLocation(programsun, "camMatrix"), 1, GL_TRUE, camMatrix.m);
-		glBindTexture(GL_TEXTURE_2D, myTex);
+		glBindTexture(GL_TEXTURE_2D, sandtex);
 		glUniform1i(glGetUniformLocation(programsun, "texUnit"), 0);
 		DrawModel(sun, programsun, "in_Position", NULL, "inTexCoord");
 
@@ -284,7 +338,7 @@ GLfloat projectionMatrix[] = {
 		camMatrix = lookAtv(campos, VectorAdd(campos, forward), up);
 		camMatrix = Mult(camMatrix, T(side,0,straight));
 		glUniformMatrix4fv(glGetUniformLocation(program, "camMatrix"), 1, GL_TRUE, camMatrix.m);
-		glBindTexture(GL_TEXTURE_2D, myTex);
+		glBindTexture(GL_TEXTURE_2D, sandtex);
 		glUniform1i(glGetUniformLocation(program, "texUnit"), 0);
 		DrawModel(ground, program, "in_Position", "in_Normal", "inTexCoord");
 
@@ -321,7 +375,7 @@ GLfloat projectionMatrix[] = {
 			x = pos2.x;
 			z = pos2.z;
 			forwardboat2 = MultMat3Vec3(mat4tomat3(Ry(0.08)), forwardboat2);
-			pos2 = VectorAdd(pos2, ScalarMult(forwardboat2, 0.9));
+			pos2 = VectorAdd(pos2, ScalarMult(forwardboat2, 2.0));
 			float dx2 = pos2.x - x;
 			float dz2 = pos2.z - z;
 			if (dz2 != 0)
@@ -357,7 +411,7 @@ GLfloat projectionMatrix[] = {
 			x = pos2.x;
 			z = pos2.z;
 			forwardboat2 = MultMat3Vec3(mat4tomat3(Ry(-0.08)), forwardboat2);
-			pos2 = VectorSub(pos2, ScalarMult(forwardboat2, 0.9));
+			pos2 = VectorSub(pos2, ScalarMult(forwardboat2, 2.0));
 			float dx2 = pos2.x - x;
 			float dz2 = pos2.z - z;
 			if (dz2 != 0)
@@ -376,19 +430,19 @@ GLfloat projectionMatrix[] = {
 		glUseProgram(program);
 		glUniformMatrix4fv(glGetUniformLocation(program, "projmatrix"), 1, GL_TRUE, projectionMatrix);
 		glUniformMatrix4fv(glGetUniformLocation(program, "camMatrix"), 1, GL_TRUE, camMatrix.m);
-		trans1 = T(1,-12, 1);
-		//trans = T(pos1.x, pos1.y, pos1.z);
-		rot1 = Mult(rot2, Ry(0));
+		//trans1 = T(1,-12, 1);
+		trans1 = T(pos1.x, pos1.y, pos1.z);
+		//rot1 = Mult(rot2, Ry(0));
 		modelToWorldMatrix = Mult(trans1, rot1);
-		glBindTexture(GL_TEXTURE_2D, myTex);
+		glBindTexture(GL_TEXTURE_2D, sandtex);
 		glUniform1i(glGetUniformLocation(program, "texUnit"), 0);
 		glUniformMatrix4fv(glGetUniformLocation(program, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
-		DrawModel(walls, program, "in_Position", "in_Normal", "inTexCoord");
+		DrawModel(boat1, program, "in_Position", "in_Normal", "inTexCoord");
 
 		trans = T(pos2.x, pos2.y, pos2.z);
 		modelToWorldMatrix = Mult(trans, rot2);
 		glUniformMatrix4fv(glGetUniformLocation(program, "mdlMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
-		DrawModel(bunny, program, "in_Position", "in_Normal", "inTexCoord");
+		DrawModel(boat2, program, "in_Position", "in_Normal", "inTexCoord");
 
 		glUniform1f(glGetUniformLocation(program, "sunposition"), modelToWorldMatrixsun.m[7]);
 		glUniform1f(glGetUniformLocation(program, "sunpositionx"), modelToWorldMatrixsun.m[11]);
@@ -398,6 +452,28 @@ GLfloat projectionMatrix[] = {
 		glUseProgram(programsea);
 		glUniform1f(glGetUniformLocation(programsea, "sunposition"), modelToWorldMatrixsun.m[7]);
 		glUniform1f(glGetUniformLocation(programsea, "sunpositionx"), modelToWorldMatrixsun.m[11]);
+
+		glUseProgram(test);
+		Matrix4D worldToView, m1, m2, m, tr, scale;
+		//worldToView = lookAt(0,0,edge*1.5, edge/2.0,edge/2.0,0, 0,1,0);
+		worldToView = camMatrix;
+		a += 0.1;
+		m1 = Rz(M_PI/5);
+		m2 = Ry(2);//a
+		m = Mult(m2,m1);
+		m = Mult(worldToView,m);
+
+		trans = T(0,-7, 0);
+		rot = Rx(0);
+		modelToWorldMatrix = Mult(trans, rot);
+
+		glUniformMatrix4fv(glGetUniformLocation(test, "projectionMatrix"), 1, GL_TRUE, projectionMatrix);
+		glUniformMatrix4fv(glGetUniformLocation(test, "modelviewMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
+		glUniformMatrix4fv(glGetUniformLocation(test, "camMatrix"), 1, GL_TRUE, camMatrix.m);
+
+		glUniform1i(glGetUniformLocation(test, "edge"), edge);
+		glUniform1i(glGetUniformLocation(test, "count"), count);
+		DrawModelInstanced(star, test, "inPosition", NULL, NULL, count);
 
 		printError("display");
 
@@ -411,8 +487,8 @@ GLfloat projectionMatrix[] = {
 	{
 		glutInit(&argc, argv);
 		glutInitContextVersion(3, 2);
-		glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH); //Var ska den här ligga?
-		glutCreateWindow ("Lab3");
+		glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
+		glutCreateWindow ("Atmospheric environment");
 		glutDisplayFunc(display);
 		init ();
 		glutTimerFunc(20, &OnTimer, 0);
